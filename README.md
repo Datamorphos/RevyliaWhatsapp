@@ -115,8 +115,7 @@ source .venv/bin/activate
 Instala:
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
 Copia:
@@ -290,13 +289,19 @@ El webhook `GET` implementa el challenge de Meta y el `POST` procesa mensajes en
 
 # 8. Desplegar en Vercel
 
-El entry point es:
+Vercel detecta la aplicación FastAPI mediante la configuración de
+`pyproject.toml`. El entry point es:
 
 ```text
-api/index.py
+src.main:app
 ```
 
 Sube el repositorio a GitHub e impórtalo en Vercel.
+
+En **Settings → Build and Deployment**, conserva la raíz del repositorio como
+`Root Directory` y deja `Install Command`, `Build Command` y `Output Directory`
+en detección automática. Las dependencias de producción se instalan desde
+`pyproject.toml`.
 
 Configura en Vercel todas las variables del `.env` necesarias. Nunca subas `.env` al repositorio.
 
