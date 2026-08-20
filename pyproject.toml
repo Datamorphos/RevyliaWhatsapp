@@ -1,0 +1,10 @@
+[project]
+name = "revylia-whatsapp-multiagent-v2"
+version = "0.2.0"
+description = "Revylia multi-agent WhatsApp gateway with LangGraph and Supabase PostgreSQL"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
