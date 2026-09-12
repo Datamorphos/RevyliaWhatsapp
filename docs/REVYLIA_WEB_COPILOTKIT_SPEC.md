@@ -1060,6 +1060,41 @@ GRANT SELECT ON ALL TABLES IN SCHEMA revylia TO revylia_panel_ro;
 
 ## 11. Despliegue — estado real y deuda técnica conocida
 
+> ### ⚠️ ACTUALIZACIÓN POSTERIOR A LA REDACCIÓN DE ESTE DOCUMENTO
+>
+> **La deuda técnica descrita en §11.2 ya NO existe: se resolvió, y en la
+> dirección contraria a la que anticipa el resto de esta sección.**
+>
+> Este capítulo (y las referencias de §12 y §13) da por hecho que el router del
+> panel se montaría en `src/main.py` con dos líneas aditivas, dejando el panel
+> y el gateway en el mismo proceso. **Eso no se hizo, y no debe hacerse.**
+>
+> La implementación final da al panel su propia aplicación, que es lo que el
+> plan pedía desde el principio ("despliegue separado del gateway"):
+>
+> | Puerto | Proceso | Entry point |
+> |---|---|---|
+> | 8000 | Gateway de WhatsApp | `src.main:app` |
+> | 8001 | API del panel | `src.panel.app:app` |
+> | 8123 | Copiloto AG-UI | `src.panel_agent.server:app` |
+>
+> `src/main.py` queda **byte-idéntico** al baseline: cero riesgo de regresión
+> sobre la ruta crítica del negocio, y cada proceso con su propia credencial
+> (`DATABASE_URL` con escritura para el gateway, `PANEL_DATABASE_URL` de solo
+> lectura para el panel).
+>
+> **Correcciones concretas a lo que se lee más abajo:**
+>
+> - §11.2 y §12 (paso 5): no hay que añadir ni retirar nada de `src/main.py`.
+> - §10: el valor correcto es
+>   `AGENT_URL=http://localhost:8123/agent/revylia_panel`.
+>   El que aparece en el bloque de configuración es incorrecto.
+> - §6.4: las políticas `FOR SELECT` ya **no** están "pendientes de diseño":
+>   `migrations/003_panel_readonly.sql` define las siete.
+>
+> El resto del documento (diccionario de datos, contratos de consulta,
+> limitaciones verificadas y pruebas de aceptación) sigue siendo válido.
+
 ### 11.1 Lo que hay hoy [VERIFICADO]
 
 `src/main.py` instancia un único objeto `FastAPI()` y le registra el router de WhatsApp

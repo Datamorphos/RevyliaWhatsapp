@@ -193,7 +193,32 @@ def get_summary(conn, clinic_id: str) -> dict:
         },
     ).fetchone()
     row = dict(row or {})
+
+    # Los alias del SELECT y las claves de SUMMARY_FORMULAS son dos listas
+    # mantenidas a mano. Con `row.get(key) or 0`, renombrar un alias en el SQL y
+    # olvidarlo aquí devolvía **0 con su fórmula al lado**, indistinguible de un
+    # cero legítimo. En un panel clínico, "0 escalaciones urgentes pendientes"
+    # cuando hay tres es el peor fallo posible, y era silencioso por diseño.
+    #
+    # Se distinguen dos situaciones que antes se confundían:
+    #   - `row` VACÍA  -> la consulta no devolvió fila (base sin datos o doble
+    #                     de test). Ceros legítimos.
+    #   - `row` PARCIAL -> devolvió fila pero le faltan indicadores: eso solo
+    #                     puede ser un alias desincronizado. Se falla ruidoso;
+    #                     el router lo traduce a 503 y el usuario ve un error
+    #                     en vez de una cifra falsa.
+    if row:
+        faltantes = [key for key in SUMMARY_FORMULAS if key not in row]
+        if faltantes:
+            raise KeyError(
+                "El SELECT de /summary no devolvió estos indicadores: "
+                + ", ".join(faltantes)
+                + ". Revisa que los alias de _SUMMARY_SQL coincidan con "
+                "SUMMARY_FORMULAS."
+            )
+
     return {
+        # `or 0` cubre el NULL legítimo de SQL y la fila ausente.
         key: {"value": int(row.get(key) or 0), "formula": formula}
         for key, formula in SUMMARY_FORMULAS.items()
     }
@@ -656,8 +681,9 @@ def decode_cursor(cursor: str) -> tuple[str, int]:
         # `fromisoformat` acepta lo que produce `encode_cursor` (`isoformat()`).
         datetime.fromisoformat(ts_text)
         return ts_text, row_id
-    except (ValueError, TypeError, UnicodeDecodeError) as exc:
-        # `binascii.Error` (padding base64 inválido) ya hereda de ValueError.
+    except (ValueError, TypeError) as exc:
+        # `binascii.Error` (padding base64 inválido) y `UnicodeDecodeError`
+        # ya heredan de ValueError, así que quedan cubiertos.
         raise ValueError("Cursor de paginación inválido.") from exc
 
 

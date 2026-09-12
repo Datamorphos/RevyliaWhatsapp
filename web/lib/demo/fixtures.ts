@@ -6,6 +6,13 @@
  *
  * IMPORTANTE:
  * - Estos datos NO representan la configuración real de la clínica.
+ * - `NOW` y las filas se evalúan UNA VEZ, al cargar el módulo. En un servidor
+ *   de larga vida las fechas quedan ancladas al arranque: "hoy" sigue siendo
+ *   el día en que se levantó el proceso. Es aceptable para una demostración
+ *   (se reinicia en cada una) y además mantiene filas y KPIs coherentes entre
+ *   sí, que es lo que importa en pantalla. Si algún día esto se usa más de un
+ *   día seguido, hay que recalcular el conjunto por petición, no solo los KPIs
+ *   (recalcular solo los KPIs los desalinearía de las tablas).
  * - Los KPIs de `demoSummary` se CALCULAN a partir de las filas de abajo, no se
  *   escriben a mano: así las cifras del panel siempre cuadran con las tablas
  *   (criterio de aceptación del plan).
@@ -93,11 +100,36 @@ export interface DemoEvent {
 
 const NOW = new Date();
 
-/** Fecha civil YYYY-MM-DD desplazada N días. Sin conversión de zona. */
+/**
+ * Fecha civil de HOY en `America/Bogota`, como `YYYY-MM-DD`.
+ *
+ * La versión anterior hacía `setDate()` en hora local y luego serializaba con
+ * `toISOString()`, que es **UTC**. Con el servidor en UTC (Vercel) o en la
+ * propia Bogotá, a partir de las 19:00 COT `TODAY` ya era el día siguiente:
+ * `appointments_today` contaba las citas de mañana y discrepaba del backend
+ * —que sí usa `America/Bogota` (§5.7)— cinco horas cada tarde.
+ *
+ * `en-CA` produce exactamente `YYYY-MM-DD`.
+ */
+const BOGOTA_TODAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Bogota",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(NOW);
+
+const [BY, BM, BD] = BOGOTA_TODAY.split("-").map(Number);
+
+/**
+ * Fecha civil `YYYY-MM-DD` desplazada N días respecto de hoy en Bogotá.
+ *
+ * La aritmética se hace en UTC sobre una fecha construida a mano, así que el
+ * huso del servidor no interviene en ningún momento.
+ */
 function day(offset: number): string {
-  const d = new Date(NOW);
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+  return new Date(Date.UTC(BY, BM - 1, BD + offset))
+    .toISOString()
+    .slice(0, 10);
 }
 
 /** Timestamp ISO desplazado N horas. */

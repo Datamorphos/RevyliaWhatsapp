@@ -25,9 +25,32 @@ Se activa el modo real definiendo variables de entorno (ninguna está definida h
 
 | Variable | Efecto al definirla |
 |---|---|
-| `PANEL_API_URL` | `panelFetch` deja de usar fixtures y llama a la API FastAPI |
-| `AGENT_URL` | Monta el copiloto real; sin ella sale el panel "no conectado" |
+| `PANEL_API_URL=http://localhost:8001` | `panelFetch` deja de usar fixtures y llama a la API FastAPI |
+| `AGENT_URL=http://localhost:8123/agent/revylia_panel` | Monta el copiloto real; sin ella sale el panel "no conectado" |
 | `PANEL_AUTH_ENABLED=true` | El middleware exige sesión de Supabase |
+| `PANEL_DEMO=true` | Fuerza los datos de demostración aunque haya backend |
+
+**El modo demo ya no es un simple "falta `PANEL_API_URL`".** Si el entorno
+muestra intención de manejar datos reales (`PANEL_AUTH_ENABLED=true` o Supabase
+configurado) y falta el backend, el panel **falla con un error visible** en vez
+de servir pacientes y escalaciones inventados. Para forzar la demo en un
+entorno así, usa `PANEL_DEMO=true` explícitamente.
+
+### Procesos del backend (despliegue separado)
+
+`src/main.py` no se toca: cada pieza corre en su propio proceso, así que un
+fallo del panel no puede afectar a la recepción de WhatsApp.
+
+```bash
+uvicorn src.main:app            --port 8000   # gateway de WhatsApp (ya existía)
+uvicorn src.panel.app:app       --port 8001   # API del panel (solo lectura)
+uvicorn src.panel_agent.server:app --port 8123  # copiloto AG-UI
+```
+
+La API del panel **no arranca** si `REVYLIA_CLINIC_ID` no está definido o si la
+clínica no devuelve filas con la credencial de solo lectura. Es deliberado:
+evita el panel que responde `200` con todo vacío porque el `clinic_id` de las
+políticas RLS y el de la configuración no coinciden.
 
 **Antes de presentar**: comprueba que NO existe `web/.env.local`. Si alguien
 define ahí `AGENT_URL`, el copiloto intenta conectarse y muestra errores de

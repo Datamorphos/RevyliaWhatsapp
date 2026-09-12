@@ -102,9 +102,37 @@ function cleanParams(params?: PanelFetchParams): Record<string, string> {
   return clean;
 }
 
-/** `true` cuando no hay backend configurado y se sirven fixtures. */
+/**
+ * `true` cuando se sirven datos de DEMOSTRACIÓN en vez de datos reales.
+ *
+ * Antes bastaba con que faltara `PANEL_API_URL`, lo que hacía del modo demo el
+ * comportamiento por defecto **también en producción**: un despliegue donde esa
+ * variable no se propagara (un typo, un entorno de Vercel mal poblado, un build
+ * sin variables de runtime) arrancaba sin ningún error y servía 12 pacientes
+ * inventados, KPIs inventados y escalaciones clínicas inventadas —incluida una
+ * urgente de "dolor intenso y sangrado"— con la única señal de un
+ * `meta.source` discreto. En una clínica eso no es un fallo cosmético.
+ *
+ * Ahora el modo demo NO se activa si el entorno muestra intención de manejar
+ * datos reales. En ese caso `realFetch` falla de forma ruidosa y visible, que
+ * es el comportamiento correcto: mejor un error que datos falsos.
+ */
 export function isDemoMode(): boolean {
-  return !process.env.PANEL_API_URL;
+  // Opt-in explícito: siempre gana.
+  if (process.env.PANEL_DEMO === "true") return true;
+
+  // Hay backend configurado: modo real.
+  if (process.env.PANEL_API_URL) return false;
+
+  // Sin backend y sin opt-in. Si alguien ya configuró autenticación o Supabase,
+  // este entorno pretende manejar datos reales: NO se inventan datos.
+  const pretendeDatosReales =
+    process.env.PANEL_AUTH_ENABLED === "true" ||
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  if (pretendeDatosReales) return false;
+
+  // Entorno sin configurar (desarrollo, demostración): fixtures.
+  return true;
 }
 
 /** Normaliza `"/patients"` y `"/api/v1/patients"` a `"/patients"`. */
@@ -158,7 +186,20 @@ async function realFetch<T>(
     );
   }
 
-  const base = process.env.PANEL_API_URL!.replace(/\/+$/, "");
+  if (!process.env.PANEL_API_URL) {
+    // Se llega aquí cuando el entorno pretende datos reales (auth o Supabase
+    // configurados) pero falta el backend. Fallar es lo correcto: servir
+    // fixtures en ese escenario mostraría datos clínicos falsos como reales.
+    console.error(
+      "[panelFetch] falta PANEL_API_URL y el entorno no es de demostración.",
+    );
+    throw new PanelApiError(
+      "upstream_unavailable",
+      "El panel no está conectado a su API. Avisa al equipo técnico.",
+    );
+  }
+
+  const base = process.env.PANEL_API_URL.replace(/\/+$/, "");
   const search = new URLSearchParams(query).toString();
   const url = `${base}/api/v1${endpoint}${search ? `?${search}` : ""}`;
 
