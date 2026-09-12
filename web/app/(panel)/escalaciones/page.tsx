@@ -5,6 +5,7 @@ import { QueryMeta } from "@/components/data/query-meta"
 import { EmptyState } from "@/components/data/empty-state"
 import { ErrorState } from "@/components/data/error-state"
 import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import type { Escalation } from "@/lib/types"
 
 import { safeFetch } from "../_lib/safe-fetch"
@@ -67,7 +68,7 @@ export default async function EscalacionesPage({
             id="status"
             name="status"
             defaultValue={status ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {ESTADOS.map((e) => (
               <option key={e.value} value={e.value}>
@@ -82,7 +83,7 @@ export default async function EscalacionesPage({
             id="priority"
             name="priority"
             defaultValue={priority ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {PRIORIDADES.map((p) => (
               <option key={p.value} value={p.value}>
@@ -91,12 +92,7 @@ export default async function EscalacionesPage({
             ))}
           </select>
         </div>
-        <button
-          type="submit"
-          className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          Filtrar
-        </button>
+        <Button type="submit">Filtrar</Button>
       </form>
 
       {!result.ok ? (

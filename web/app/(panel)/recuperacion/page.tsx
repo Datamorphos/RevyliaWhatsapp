@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/data/empty-state"
 import { ErrorState } from "@/components/data/error-state"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
 import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import type { RecoveryMessage } from "@/lib/types"
 
 import { safeFetch } from "../_lib/safe-fetch"
@@ -69,7 +70,7 @@ export default async function RecuperacionPage({
             id="status"
             name="status"
             defaultValue={status ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {ESTADOS.map((e) => (
               <option key={e.value} value={e.value}>
@@ -78,12 +79,7 @@ export default async function RecuperacionPage({
             ))}
           </select>
         </div>
-        <button
-          type="submit"
-          className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          Filtrar
-        </button>
+        <Button type="submit">Filtrar</Button>
       </form>
 
       {!result.ok ? (

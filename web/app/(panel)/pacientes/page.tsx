@@ -5,6 +5,7 @@ import { QueryMeta } from "@/components/data/query-meta"
 import { EmptyState } from "@/components/data/empty-state"
 import { ErrorState } from "@/components/data/error-state"
 import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import type { Patient } from "@/lib/types"
 
 import { safeFetch } from "../_lib/safe-fetch"
@@ -68,7 +69,7 @@ export default async function PacientesPage({
             type="text"
             defaultValue={query ?? ""}
             placeholder="Ej. Laura Gómez o 3001112233"
-            className="h-9 w-64 rounded-md border bg-background px-3 text-sm"
+            className="h-9 w-64 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -77,7 +78,7 @@ export default async function PacientesPage({
             id="status"
             name="status"
             defaultValue={status ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {ESTADOS.map((e) => (
               <option key={e.value} value={e.value}>
@@ -92,7 +93,7 @@ export default async function PacientesPage({
             id="consent"
             name="consent"
             defaultValue={consent ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {CONSENTIMIENTOS.map((c) => (
               <option key={c.value} value={c.value}>
@@ -101,12 +102,7 @@ export default async function PacientesPage({
             ))}
           </select>
         </div>
-        <button
-          type="submit"
-          className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          Buscar
-        </button>
+        <Button type="submit">Buscar</Button>
       </form>
 
       {!result.ok ? (

@@ -5,6 +5,7 @@ import { QueryMeta } from "@/components/data/query-meta"
 import { EmptyState } from "@/components/data/empty-state"
 import { ErrorState } from "@/components/data/error-state"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import type { WhatsappEvent } from "@/lib/types"
 
@@ -45,7 +46,9 @@ export default async function EventosPage({
         description="Estado de procesamiento de los mensajes entrantes de WhatsApp."
       />
 
-      <Alert variant="destructive">
+      {/* `default`, no `destructive`: es una limitación conocida del esquema,
+          no un fallo. En rojo se leía como si algo se hubiera roto. */}
+      <Alert>
         <AlertTitle>Limitación verificada del esquema</AlertTitle>
         <AlertDescription>
           Estos eventos muestran <strong>estado de procesamiento</strong>, no
@@ -63,11 +66,16 @@ export default async function EventosPage({
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="status">Estado</Label>
+          {/* `<select>` nativo a propósito: este formulario se envía por GET
+              sin JavaScript (la página es un Server Component). El `Select` de
+              shadcn es de cliente y no aporta un valor nativo al envío, así que
+              rompería el filtro. Se le dan las clases del `Input` de shadcn
+              para que la altura y el borde casen con el resto. */}
           <select
             id="status"
             name="status"
             defaultValue={status ?? ""}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {ESTADOS.map((e) => (
               <option key={e.value} value={e.value}>
@@ -76,12 +84,7 @@ export default async function EventosPage({
             ))}
           </select>
         </div>
-        <button
-          type="submit"
-          className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-        >
-          Filtrar
-        </button>
+        <Button type="submit">Filtrar</Button>
       </form>
 
       {!result.ok ? (
