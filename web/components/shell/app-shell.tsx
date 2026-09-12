@@ -174,8 +174,14 @@ export function AppShell({ children }: AppShellProps) {
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter>
-            <p className="px-2 pb-1 text-xs leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden">
+          {/* `shrink-0` + `border-t`: la lista de módulos es la que scrollea
+              (`SidebarContent` es `flex-1 overflow-auto`). Sin el borde, en
+              pantallas bajas el último módulo queda cortado a media altura
+              justo encima del aviso y parece que el pie está recortado; con él
+              se lee como el borde de un área desplazable. `shrink-0` impide
+              que el pie ceda altura si el contenido crece. */}
+          <SidebarFooter className="shrink-0 border-t border-sidebar-border">
+            <p className="px-2 py-0.5 text-xs leading-relaxed text-pretty text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
               Consulta de solo lectura. El panel no crea, edita ni envía nada.
             </p>
           </SidebarFooter>
@@ -213,7 +219,14 @@ export function AppShell({ children }: AppShellProps) {
             <ThemeToggle />
           </header>
 
-          <div className="flex min-w-0 flex-1 flex-col gap-5 p-4 md:gap-6 md:p-6">
+          {/* `pb-20`: el botón flotante del copiloto es de 48 px con 20 px de
+              margen, así que ocupa los 68 px inferiores de la derecha. Medido
+              en /pacientes a 1440x900: al final del documento la última fila
+              terminaba en y=876 y el botón empieza en y=832 —la tapaba—; con
+              este colchón termina en y=820 y queda libre. En páginas que no
+              desplazan no cambia nada: el contenedor es `flex-1` y absorbe el
+              relleno (verificado en /escalaciones, misma altura con y sin él). */}
+          <div className="flex min-w-0 flex-1 flex-col gap-5 p-4 pb-20 md:gap-6 md:p-6 md:pb-20">
             {children}
           </div>
         </SidebarInset>

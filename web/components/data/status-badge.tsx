@@ -80,9 +80,15 @@ const MAPS: Record<StatusKind, Record<string, Entry>> = {
   },
 }
 
+/**
+ * `info` no puede quedarse en `outline` (gris): en la columna de prioridad de
+ * Escalaciones, "Media" (info) y "Baja" (neutral) se renderizaban idénticas y
+ * la escala urgente > alta > media > baja perdía su lectura de un vistazo.
+ * Por eso existe el token `--info` en `app/globals.css`.
+ */
 const TONE_CLASS: Record<Tone, string> = {
   neutral: "",
-  info: "",
+  info: "bg-info/15 text-info dark:bg-info/20",
   success: "bg-success/15 text-success dark:bg-success/20",
   warning: "bg-warning/15 text-warning dark:bg-warning/20",
   danger: "",
@@ -90,7 +96,7 @@ const TONE_CLASS: Record<Tone, string> = {
 
 const TONE_VARIANT: Record<Tone, "secondary" | "outline" | "destructive"> = {
   neutral: "secondary",
-  info: "outline",
+  info: "secondary",
   success: "secondary",
   warning: "secondary",
   danger: "destructive",

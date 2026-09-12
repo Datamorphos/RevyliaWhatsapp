@@ -91,8 +91,12 @@ export function KpiCard({
         >
           {value}
         </div>
+        {/* El `hint` casi siempre es la fórmula SQL del indicador. En prosa
+            competía con la etiqueta; en monoespaciada y un punto más pequeña se
+            lee como lo que es —procedencia del dato— y la jerarquía queda
+            etiqueta › cifra › fórmula. */}
         {hint ? (
-          <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
+          <p className="mt-1.5 font-mono text-[11px] leading-relaxed text-pretty text-muted-foreground">
             {hint}
           </p>
         ) : null}

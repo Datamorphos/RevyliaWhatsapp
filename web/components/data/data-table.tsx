@@ -41,6 +41,24 @@ export function createPanelColumnHelper<TData>() {
 
 const SKELETON_ROWS = 5
 
+/**
+ * Ancho máximo de una celda antes de recortar con "…".
+ *
+ * Sin este tope, una sola columna de texto libre decide el ancho de toda la
+ * tabla: en Eventos, "Respuesta" (80 caracteres) medía 550 px y empujaba la
+ * tabla a 1362 px dentro de un contenedor de 1119 px, dejando dos columnas
+ * fuera de la vista. Con 18rem la tabla de Eventos entra justa a 1440 px.
+ *
+ * `max-width` en un `<td>` de una tabla `auto` solo acota el ancho *preferido*:
+ * si la tabla ya cabe, el navegador reparte el sobrante y el tope no recorta
+ * nada; y nunca lleva una columna por debajo de su ancho mínimo de contenido.
+ * Es decir, solo actúa cuando de verdad sobra ancho. Las columnas que se miden
+ * por debajo del tope (paciente, fechas, estados) quedan intactas, y las celdas
+ * apiladas (nombre + teléfono) nunca se recortan: medido en Pacientes,
+ * Oportunidades y Escalaciones a 1440, 1000 y 390 px.
+ */
+const CELL_MAX_WIDTH = "max-w-72"
+
 export interface DataTableProps<TData> {
   columns: Array<PanelColumnDef<TData>>
   data: TData[]
@@ -63,6 +81,43 @@ export function DataTable<TData>({
     getCoreRowModel: getCoreRowModel(),
   })
 
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
+  const [hasHiddenColumns, setHasHiddenColumns] = React.useState(false)
+
+  /**
+   * A 390 px una tabla de seis columnas enseña dos, y nada indica que las otras
+   * cuatro existan. Se observa el desbordamiento real del contenedor para
+   * pintar un degradado en el borde derecho y una línea de ayuda en móvil, que
+   * desaparecen al llegar al final del desplazamiento.
+   *
+   * El contenedor que hace scroll lo crea `<Table>` (shadcn), no este
+   * componente, así que se busca por su `data-slot` — el atributo estable con
+   * el que shadcn identifica sus partes — en vez de duplicar el contenedor.
+   */
+  React.useEffect(() => {
+    const scroller = wrapperRef.current?.querySelector<HTMLElement>(
+      '[data-slot="table-container"]'
+    )
+    if (!scroller) return
+
+    const update = () => {
+      const remaining =
+        scroller.scrollWidth - scroller.clientWidth - scroller.scrollLeft
+      setHasHiddenColumns(remaining > 1)
+    }
+
+    update()
+    scroller.addEventListener("scroll", update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(scroller)
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
+
+    return () => {
+      scroller.removeEventListener("scroll", update)
+      observer.disconnect()
+    }
+  }, [data, columns])
+
   const headerGroups = table.getHeaderGroups()
   const rows = table.getRowModel().rows
   const columnCount =
@@ -70,10 +125,20 @@ export function DataTable<TData>({
 
   return (
     <div
+      ref={wrapperRef}
       aria-busy={isLoading}
-      className={cn("rounded-xl border border-border bg-card", className)}
+      className={cn(
+        "relative rounded-xl border border-border bg-card",
+        className
+      )}
     >
-      <div className="overflow-x-auto">
+      <div className="relative overflow-hidden rounded-xl">
+        {hasHiddenColumns ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-card to-transparent"
+          />
+        ) : null}
         <Table>
           <TableHeader>
             {headerGroups.map((headerGroup) => (
@@ -81,7 +146,7 @@ export function DataTable<TData>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className="bg-muted/40 px-3 text-xs font-medium text-muted-foreground first:rounded-tl-xl last:rounded-tr-xl"
+                    className="bg-muted px-3 text-xs font-medium text-muted-foreground first:rounded-tl-xl last:rounded-tr-xl"
                   >
                     {header.isPlaceholder
                       ? null
@@ -125,7 +190,13 @@ export function DataTable<TData>({
               rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="px-3 py-2.5">
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        "overflow-hidden px-3 py-2.5 text-ellipsis",
+                        CELL_MAX_WIDTH
+                      )}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -135,6 +206,12 @@ export function DataTable<TData>({
           </TableBody>
         </Table>
       </div>
+
+      {hasHiddenColumns ? (
+        <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground md:hidden">
+          Desliza la tabla para ver el resto de columnas.
+        </p>
+      ) : null}
 
       {isLoading ? (
         <span className="sr-only" role="status">

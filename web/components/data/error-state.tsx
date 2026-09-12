@@ -34,11 +34,16 @@ export function ErrorState({
     <div
       role="alert"
       className={cn(
-        "flex flex-col items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center dark:bg-destructive/10",
+        "flex flex-col items-center justify-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-8 text-center dark:bg-destructive/10",
         className
       )}
     >
-      <TriangleAlertIcon aria-hidden="true" className="size-5 text-destructive" />
+      <span
+        aria-hidden="true"
+        className="mb-1 flex size-9 items-center justify-center rounded-full bg-destructive/10 text-destructive dark:bg-destructive/20"
+      >
+        <TriangleAlertIcon className="size-4" />
+      </span>
       <p className="text-sm font-medium text-destructive">{title}</p>
       {description ? (
         <p className="max-w-prose text-sm text-balance text-muted-foreground">

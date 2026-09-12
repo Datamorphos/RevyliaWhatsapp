@@ -31,6 +31,8 @@
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -75,6 +77,12 @@
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.52 0.11 72);
   --warning-foreground: oklch(0.985 0 0);
+  /* `info` existe porque el tema `neutral` deja el estado intermedio en gris:
+     en la columna de prioridad de Escalaciones, "Media" (info) quedaba igual
+     que "Baja" (neutral). Mismo tono azul que `--chart-1` para que la serie de
+     gráficas y los estados hablen el mismo idioma cromático. */
+  --info: oklch(0.52 0.13 250);
+  --info-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -116,6 +124,8 @@
   --success-foreground: oklch(0.205 0 0);
   --warning: oklch(0.82 0.13 80);
   --warning-foreground: oklch(0.205 0 0);
+  --info: oklch(0.78 0.12 250);
+  --info-foreground: oklch(0.205 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

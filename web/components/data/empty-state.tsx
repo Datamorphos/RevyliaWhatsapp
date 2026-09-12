@@ -28,13 +28,13 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-6 py-10 text-center",
+        "flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-6 py-8 text-center",
         className
       )}
     >
       <span
         aria-hidden="true"
-        className="text-muted-foreground [&_svg]:size-5"
+        className="mb-1 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4"
       >
         {icon ?? <InboxIcon />}
       </span>
