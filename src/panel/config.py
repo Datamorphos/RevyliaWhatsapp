@@ -1,5 +1,6 @@
 """Configuración del panel. Mismo patrón que `src/core/config.py`."""
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,6 +50,19 @@ class PanelSettings(BaseSettings):
     def jwt_audience(self) -> str:
         return SUPABASE_AUDIENCE
 
+    @property
+    def clinic_id_is_default(self) -> bool:
+        """True si `REVYLIA_CLINIC_ID` no se fijó y se está usando el de demo.
+
+        Importa porque `migrations/003_panel_readonly.sql` lleva el `clinic_id`
+        incrustado como literal en las 7 políticas RLS. Si el valor efectivo
+        aquí y el de las políticas no coinciden, la intersección es vacía y el
+        panel devuelve **200 con `data: []` en todos los módulos**, sin ningún
+        error: exactamente el fallo silencioso que 003 existe para evitar,
+        reintroducido una capa más arriba.
+        """
+        return os.environ.get("REVYLIA_CLINIC_ID") in (None, "")
+
     def require_panel_runtime(self) -> None:
         missing = []
         if not self.panel_database_url:
@@ -57,9 +71,37 @@ class PanelSettings(BaseSettings):
             missing.append("SUPABASE_JWKS_URL (o SUPABASE_URL)")
         if not self.jwt_issuer:
             missing.append("SUPABASE_JWT_ISSUER (o SUPABASE_URL)")
+        if self.clinic_id_is_default:
+            # Se exige explícito: heredar el literal de demo en silencio es
+            # justo cómo se produce el panel vacío descrito arriba.
+            missing.append(
+                "REVYLIA_CLINIC_ID (debe coincidir EXACTAMENTE con el clinic_id "
+                "de las políticas de migrations/003_panel_readonly.sql)"
+            )
         if missing:
             raise RuntimeError(
                 "Faltan variables para ejecutar el panel: " + ", ".join(missing)
+            )
+
+    def verify_clinic_exists(self, conn) -> None:
+        """Falla ruidosamente si la clínica configurada no devuelve filas.
+
+        Se llama al arrancar (`src/panel/app.py`). Cubre los dos modos de fallo
+        que producen un panel vacío sin error: un `REVYLIA_CLINIC_ID` que no
+        existe, y unas políticas RLS que filtran por otro `clinic_id`. En ambos
+        casos este SELECT devuelve cero filas y el proceso no arranca, en vez
+        de servir siete tablas vacías y trece KPIs en cero.
+        """
+        row = conn.execute(
+            "SELECT 1 AS ok FROM revylia.clinics WHERE id = %s",
+            (self.revylia_clinic_id,),
+        ).fetchone()
+        if not row:
+            raise RuntimeError(
+                f"La clínica '{self.revylia_clinic_id}' no devuelve filas con la "
+                "credencial de solo lectura. Revisa REVYLIA_CLINIC_ID y el "
+                "clinic_id de las políticas RLS de migrations/003_panel_readonly.sql: "
+                "si no coinciden, el panel se vería vacío sin ningún error."
             )
 
 

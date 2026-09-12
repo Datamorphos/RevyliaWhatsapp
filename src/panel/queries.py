@@ -637,14 +637,27 @@ def encode_cursor(received_at: Any, row_id: Any) -> str:
 
 
 def decode_cursor(cursor: str) -> tuple[str, int]:
-    """Devuelve (timestamp ISO, id). Lanza ValueError si el cursor es basura."""
+    """Devuelve (timestamp ISO, id). Lanza ValueError si el cursor es basura.
+
+    El timestamp se valida AQUÍ, no en PostgreSQL. Antes solo se comprobaba el
+    base64 y que el id fuese entero: una cadena como `"not-a-ts|5"` pasaba el
+    filtro y llegaba a `%(cursor_ts)s::timestamptz`, donde psycopg lanzaba
+    `InvalidDatetimeFormat`. Esa excepción NO hereda de `ValueError`, así que
+    el `except ValueError` del router no la atrapaba y terminaba como
+    **503 upstream_unavailable**: un enlace de paginación truncado o caducado
+    se mostraba al usuario como una caída de la base de datos.
+    """
     try:
         raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
         ts_text, _, id_text = raw.rpartition("|")
         if not ts_text:
             raise ValueError("cursor sin separador")
-        return ts_text, int(id_text)
+        row_id = int(id_text)
+        # `fromisoformat` acepta lo que produce `encode_cursor` (`isoformat()`).
+        datetime.fromisoformat(ts_text)
+        return ts_text, row_id
     except (ValueError, TypeError, UnicodeDecodeError) as exc:
+        # `binascii.Error` (padding base64 inválido) ya hereda de ValueError.
         raise ValueError("Cursor de paginación inválido.") from exc
 
 

@@ -273,30 +273,71 @@ def test_los_errores_no_filtran_trazas_ni_sql():
 
 
 # --------------------------------------------------------------------------
-# 3. Sin checkpointer (§0.5)
+# 3. Memoria solo en proceso (§0.5 revisado)
+#
+# La versión original de estos tests prohibía la PALABRA "checkpointer". Eso
+# confundía el objetivo con el mecanismo: `ag_ui_langgraph` llama a
+# `graph.aget_state(...)`, que sin checkpointer lanza `ValueError: No
+# checkpointer set` en la primera petición. Los tests impedían el arreglo.
+#
+# Lo que de verdad exige §0.5 es una propiedad observable: la conversación no
+# sobrevive al reinicio del proceso y no toca `DATABASE_URL`. `MemorySaver`
+# (RAM) cumple; `PostgresSaver` no y sigue prohibido.
 # --------------------------------------------------------------------------
 
 
-def test_no_se_construye_checkpointer():
-    patron = re.compile(r"(checkpoint|saver)", re.IGNORECASE)
+def test_no_se_usa_ningun_saver_persistente():
+    """Prohibido cualquier saver que escriba fuera del proceso."""
+    prohibidos = re.compile(
+        r"(postgres|sqlite|redis|mongo|async_postgres)", re.IGNORECASE
+    )
     for modulo in MODULOS:
         tree = arbol(modulo)
-        for nombre in identificadores(tree):
-            assert not patron.search(nombre), (
-                f"{modulo}.py usa el identificador `{nombre}`: §0.5 prohíbe "
-                "cualquier checkpointer en el copiloto del panel."
-            )
         for origen, nombre in importaciones(tree):
-            assert not patron.search(origen), f"{modulo}.py importa {origen}"
-            assert not patron.search(nombre), f"{modulo}.py importa {nombre}"
+            texto = f"{origen}.{nombre}"
+            if "checkpoint" in texto.lower() or "saver" in texto.lower():
+                assert not prohibidos.search(texto), (
+                    f"{modulo}.py importa `{texto}`: §0.5 solo permite memoria "
+                    "en proceso (MemorySaver), nunca un saver persistente."
+                )
 
 
-def test_el_grafo_se_compila_sin_checkpointer():
+def test_el_copiloto_no_toca_la_base_de_datos_de_checkpoints():
+    """No se reutiliza `DATABASE_URL` ni los checkpoints de WhatsApp."""
+    for modulo in MODULOS:
+        tree = arbol(modulo)
+        for origen, nombre in importaciones(tree):
+            texto = f"{origen}.{nombre}"
+            assert "checkpoint_connection" not in texto, (
+                f"{modulo}.py importa `{texto}`: es la conexión de checkpoints "
+                "del gateway de WhatsApp."
+            )
+        for nombre in identificadores(tree):
+            assert nombre != "DATABASE_URL", (
+                f"{modulo}.py referencia DATABASE_URL; el panel usa "
+                "PANEL_DATABASE_URL (solo lectura)."
+            )
+
+
+def test_el_grafo_se_compila_con_memoria_en_proceso():
+    """`compile()` usa `MemorySaver` y nunca `store=`."""
+    encontrado = False
     for nodo in ast.walk(arbol("graph")):
         if isinstance(nodo, ast.Call) and _raiz_decorador(nodo) == "compile":
+            encontrado = True
             argumentos = {kw.arg for kw in nodo.keywords}
-            assert "checkpointer" not in argumentos
-            assert "store" not in argumentos
+            assert "store" not in argumentos, "§0.5 no permite `store=`"
+            assert "checkpointer" in argumentos, (
+                "`ag_ui_langgraph` llama a `aget_state()`: sin checkpointer el "
+                "copiloto falla en la primera petición."
+            )
+            for kw in nodo.keywords:
+                if kw.arg == "checkpointer":
+                    fuente = ast.dump(kw.value)
+                    assert "MemorySaver" in fuente, (
+                        "El checkpointer debe ser `MemorySaver` (en RAM)."
+                    )
+    assert encontrado, "No se encontró ninguna llamada a compile() en graph.py"
 
 
 # --------------------------------------------------------------------------
@@ -548,7 +589,8 @@ def test_el_limite_se_recorta_a_cien(tools_modulo):
         tools_modulo._pagina(25, -1)
 
 
-def test_el_grafo_compilado_no_tiene_checkpointer():
+def test_el_grafo_compilado_usa_memoria_en_proceso():
+    """El grafo vivo tiene checkpointer y es de memoria, no persistente."""
     grafo_modulo = pytest.importorskip(
         "src.panel_agent.graph", reason="requiere langgraph y langchain_google_genai"
     )
@@ -561,4 +603,14 @@ def test_el_grafo_compilado_no_tiene_checkpointer():
             return AIMessage(content="respuesta de prueba")
 
     grafo = grafo_modulo.build_panel_graph(model=ModeloFalso())
-    assert getattr(grafo, "checkpointer", None) in (None, False)
+    checkpointer = getattr(grafo, "checkpointer", None)
+
+    # Debe existir: `ag_ui_langgraph` llama a `aget_state()`.
+    assert checkpointer is not None, (
+        "Sin checkpointer, el copiloto lanza `ValueError: No checkpointer set` "
+        "en la primera petición."
+    )
+    # Y debe vivir en el proceso, no en una base de datos.
+    nombre = type(checkpointer).__name__
+    assert "Memory" in nombre, f"Se esperaba MemorySaver, se obtuvo {nombre}"
+    assert "Postgres" not in nombre and "Sqlite" not in nombre

@@ -3,14 +3,17 @@
 Bucle mínimo modelo <-> herramientas: el modelo Gemini (`REVYLIA_MODEL`) solo
 dispone de las herramientas de consulta de `src/panel_agent/tools.py`.
 
-SIN CHECKPOINTER (§0.5): la conversación del panel es de sesión. No se crea
-`PostgresSaver` ni se reutilizan los checkpoints del agente de WhatsApp.
+MEMORIA SOLO EN PROCESO (§0.5): la conversación del panel es de sesión. Se usa
+`MemorySaver` (en RAM), NUNCA `PostgresSaver`: no se toca `DATABASE_URL` ni se
+reutilizan los checkpoints del agente de WhatsApp, y nada sobrevive al
+reinicio del proceso.
 """
 
 from typing import Any
 
 from langchain_core.messages import SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -51,11 +54,14 @@ def build_panel_graph(*, settings: Settings | None = None, model: Any = None):
     builder.add_conditional_edges("copiloto", tools_condition)
     builder.add_edge("tools", "copiloto")
 
-    # §0.5: se compila deliberadamente SIN `checkpointer=`. La conversación es
-    # de sesión y no debe persistirse ni cruzarse con la de WhatsApp.
-    # Advertencia para el orquestador: `ag_ui_langgraph` lee el estado del hilo
-    # con `graph.aget_state(...)`, que sobre un grafo sin checkpointer lanza
-    # `ValueError: No checkpointer set`. Si eso ocurre en ejecución, es una
-    # decisión de contrato (§0.5), no un descuido: debe resolverla el
-    # orquestador antes de añadir cualquier saver aquí.
-    return builder.compile()
+    # §0.5 (revisado). La versión original compilaba sin `checkpointer=` y eso
+    # rompía en ejecución: `ag_ui_langgraph` lee el estado del hilo con
+    # `graph.aget_state(...)`, que sobre un grafo sin checkpointer lanza
+    # `ValueError: No checkpointer set` — en la PRIMERA petición, no al
+    # importar, así que no lo detectaba nada salvo levantar el servidor.
+    #
+    # El invariante que importa es una propiedad observable, no la ausencia de
+    # una clase: *la conversación no sobrevive al reinicio del proceso y no
+    # toca `DATABASE_URL`*. `MemorySaver` guarda en RAM del proceso y cumple
+    # las dos cosas; `PostgresSaver` incumpliría ambas y sigue prohibido.
+    return builder.compile(checkpointer=MemorySaver())

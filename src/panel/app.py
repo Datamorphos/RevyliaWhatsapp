@@ -31,6 +31,9 @@ El formato de error de §4 y la envoltura de §4 los aplica `PanelRoute`
 `exception_handler`: basta con incluir el router.
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from src.core.logging import configure_logging
@@ -39,6 +42,36 @@ from src.panel.router import router as panel_router
 
 
 configure_logging()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Comprobación de arranque: falla ruidosamente antes de servir nada.
+
+    Sin esto, un `REVYLIA_CLINIC_ID` equivocado o unas políticas RLS que
+    filtren por otro `clinic_id` producen un panel que responde `200` con
+    `data: []` en los siete módulos y trece KPIs en cero — indistinguible de
+    una clínica sin actividad. Es preferible no arrancar.
+
+    Si no hay `PANEL_DATABASE_URL` se omite la comprobación y se avisa: así el
+    módulo sigue siendo importable en desarrollo y en los tests.
+    """
+    settings = get_panel_settings()
+    if not settings.panel_database_url:
+        logger.warning(
+            "PANEL_DATABASE_URL no está configurada: se omite la verificación "
+            "de clínica. La API responderá 503 en las rutas que tocan datos."
+        )
+    else:
+        from src.panel.db import panel_connection
+
+        with panel_connection(settings) as conn:
+            settings.verify_clinic_exists(conn)
+        logger.info(
+            "Panel listo para la clínica '%s'.", settings.revylia_clinic_id
+        )
+    yield
 
 app = FastAPI(
     title="Revylia Panel API (solo lectura)",
@@ -47,6 +80,7 @@ app = FastAPI(
         "API de consulta del panel interno de Revylia. Solo lectura: ni esta "
         "API, ni el copiloto, ni la credencial SQL pueden escribir."
     ),
+    lifespan=lifespan,
 )
 
 app.include_router(panel_router)
