@@ -18,6 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+panel = [
+    "pyjwt[crypto]>=2.14,<3",
+    "ag-ui-langgraph>=0.0.45,<0.1",
+    "copilotkit>=0.1.96,<0.2",
+]
 dev = [
     "uvicorn[standard]>=0.34,<1",
     "pytest>=8,<10",
