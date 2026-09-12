@@ -62,8 +62,41 @@ $$;
 -- `revylia_panel_ro` preexistente que perteneciera a algún grupo privilegiado
 -- conservaría los privilegios de escritura heredados y esta migración no se
 -- los quitaría, aunque el bloque `DO $$` de arriba sí lo declara al crearlo.
+-- OJO: `NOSUPERUSER` y `NOBYPASSRLS` NO se pueden reasignar aquí. PostgreSQL
+-- exige ser SUPERUSER para tocar esos dos atributos, incluso para ponerlos en
+-- "NO" y aunque el rol ya los tenga así. En Supabase el rol que ejecuta las
+-- migraciones (`postgres`) NO es superusuario, de modo que incluirlos aborta la
+-- migración entera con "permission denied to alter role". Se dejan solo en el
+-- CREATE de arriba (donde son los valores por defecto y sí se aceptan) y aquí
+-- se VERIFICAN en vez de reasignarse.
 ALTER ROLE revylia_panel_ro
-    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
+    LOGIN NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
+
+-- Verificación dura: si un rol preexistente fuese superusuario o saltara RLS,
+-- toda la garantía de solo lectura sería falsa. Mejor abortar que continuar.
+DO $$
+DECLARE r record;
+BEGIN
+    SELECT rolsuper, rolbypassrls, rolinherit, rolcreaterole, rolcreatedb
+      INTO r
+      FROM pg_roles WHERE rolname = 'revylia_panel_ro';
+
+    IF r.rolsuper OR r.rolbypassrls THEN
+        RAISE EXCEPTION
+            'revylia_panel_ro tiene SUPERUSER=% o BYPASSRLS=%. Las políticas RLS '
+            'no lo contendrían y el panel podría leer y escribir cualquier cosa. '
+            'Corrígelo con un rol superusuario: '
+            'ALTER ROLE revylia_panel_ro NOSUPERUSER NOBYPASSRLS;',
+            r.rolsuper, r.rolbypassrls;
+    END IF;
+
+    IF r.rolinherit OR r.rolcreaterole OR r.rolcreatedb THEN
+        RAISE WARNING
+            'revylia_panel_ro: inherit=% createrole=% createdb=% (se esperaba false).',
+            r.rolinherit, r.rolcreaterole, r.rolcreatedb;
+    END IF;
+END
+$$;
 
 -- Si el rol venía de antes, pudo quedar dentro de algún grupo. Se sale de
 -- todos: la pertenencia es la vía más silenciosa de recuperar escritura.
@@ -138,23 +171,37 @@ REVOKE CREATE ON SCHEMA public FROM revylia_panel_ro;
 -- EL ROL QUE EJECUTA ESTE SCRIPT. En Supabase las migraciones suelen correrlas
 -- `postgres` o `supabase_admin`, así que se declaran explícitamente: sin esto,
 -- una tabla futura creada por otro rol no quedaría cubierta.
+-- Solo se tocan los roles de los que el ejecutor ES MIEMBRO. En Supabase,
+-- `supabase_admin` es SUPERUSER y `postgres` no lo es: intentar
+-- `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` desde `postgres` falla con
+-- "permission denied to alter role" y aborta la migración entera. Se omite en
+-- silencio lo que no se puede tocar y se avisa por NOTICE.
 DO $$
 DECLARE propietario text;
 BEGIN
     FOREACH propietario IN ARRAY ARRAY['postgres', 'supabase_admin', current_user]
     LOOP
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = propietario) THEN
-            EXECUTE format(
-                'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
-                'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM revylia_panel_ro',
-                propietario
-            );
-            EXECUTE format(
-                'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
-                'REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
-                propietario
-            );
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = propietario) THEN
+            CONTINUE;
         END IF;
+        IF NOT pg_has_role(current_user, propietario, 'MEMBER') THEN
+            RAISE NOTICE
+                'Omitido ALTER DEFAULT PRIVILEGES FOR ROLE %: el ejecutor (%) no '
+                'es miembro. Si ese rol crea tablas en revylia, habra que '
+                'repetir esta migracion con un rol que si lo sea.',
+                propietario, current_user;
+            CONTINUE;
+        END IF;
+        EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
+            'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM revylia_panel_ro',
+            propietario
+        );
+        EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
+            'REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
+            propietario
+        );
     END LOOP;
 END
 $$;
