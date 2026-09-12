@@ -826,3 +826,103 @@ def test_las_firmas_de_queries_coinciden_con_el_contrato():
         params = inspect.signature(getattr(queries, nombre)).parameters
         assert list(params)[:2] == ["conn", "clinic_id"]
         assert params["limit"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+# =====================================================================
+# Anti-deriva: la disponibilidad está duplicada a propósito (§0.3 prohíbe
+# que el panel importe ClinicRepository), pero nada ataba las dos copias.
+#
+# Si alguien amplía el horario de la clínica en `src/database/repository.py`
+# —el que de verdad usa el agente de WhatsApp para agendar— el panel seguiría
+# mostrando el horario viejo y NINGÚN test fallaría: el personal vería franjas
+# libres que el agente ya no ofrece, o al revés.
+#
+# Estos tests leen las constantes reales del gateway de su código fuente y las
+# comparan con las del panel. No importan `repository.py` (arrastra psycopg);
+# lo analizan con AST, que no requiere el driver.
+# =====================================================================
+
+
+def _horario_del_gateway() -> dict[str, int]:
+    """Extrae las horas incrustadas en `ClinicRepository.list_available_slots`."""
+    import ast as _ast
+    from pathlib import Path
+
+    fuente = Path("src/database/repository.py").read_text(encoding="utf-8")
+    arbol = _ast.parse(fuente)
+
+    funcion = next(
+        nodo
+        for nodo in _ast.walk(arbol)
+        if isinstance(nodo, _ast.FunctionDef) and nodo.name == "list_available_slots"
+    )
+
+    valores: dict[str, int] = {}
+
+    # `end_hour = 12 if weekday == 5 else 17`
+    for nodo in _ast.walk(funcion):
+        if (
+            isinstance(nodo, _ast.Assign)
+            and any(
+                isinstance(t, _ast.Name) and t.id == "end_hour" for t in nodo.targets
+            )
+            and isinstance(nodo.value, _ast.IfExp)
+        ):
+            valores["sabado"] = nodo.value.body.value
+            valores["entre_semana"] = nodo.value.orelse.value
+
+    # `range(8, end_hour)`
+    for nodo in _ast.walk(funcion):
+        if (
+            isinstance(nodo, _ast.Call)
+            and isinstance(nodo.func, _ast.Name)
+            and nodo.func.id == "range"
+        ):
+            valores["primera_hora"] = nodo.args[0].value
+
+    # `if weekday == 6: return []`
+    for nodo in _ast.walk(funcion):
+        if isinstance(nodo, _ast.Compare) and isinstance(nodo.comparators[0], _ast.Constant):
+            izquierda = nodo.left
+            if isinstance(izquierda, _ast.Name) and izquierda.id == "weekday":
+                if nodo.comparators[0].value == 6:
+                    valores["dia_cerrado"] = 6
+
+    return valores
+
+
+def test_el_horario_del_panel_no_se_desvia_del_gateway():
+    from src.panel import queries
+
+    gateway = _horario_del_gateway()
+
+    assert gateway, "No se pudo leer el horario de repository.py"
+    assert queries._FIRST_HOUR == gateway["primera_hora"], (
+        f"El panel abre a las {queries._FIRST_HOUR} y el gateway a las "
+        f"{gateway['primera_hora']}. Las franjas mostradas en el panel ya no "
+        "coinciden con las que el agente de WhatsApp puede agendar."
+    )
+    assert queries._SATURDAY_END_HOUR == gateway["sabado"], (
+        f"Sábado: panel hasta {queries._SATURDAY_END_HOUR}, gateway hasta "
+        f"{gateway['sabado']}."
+    )
+    assert queries._WEEKDAY_END_HOUR == gateway["entre_semana"], (
+        f"Entre semana: panel hasta {queries._WEEKDAY_END_HOUR}, gateway hasta "
+        f"{gateway['entre_semana']}."
+    )
+
+
+def test_ambos_cierran_el_mismo_dia_de_la_semana():
+    """Domingo (weekday()==6) cerrado en los dos sitios."""
+    from datetime import date as _date
+
+    from src.panel import queries
+
+    assert _horario_del_gateway().get("dia_cerrado") == 6
+
+    # Un domingo real: 2026-09-13.
+    domingo = _date(2026, 9, 13)
+    assert domingo.weekday() == 6
+    resultado = queries.get_availability(FakeConn(lambda sql, p: []), "clinica-sonrisas", domingo)
+    assert resultado["is_open"] is False
+    assert resultado["slots"] == []

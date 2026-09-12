@@ -58,7 +58,30 @@ END
 $$;
 
 -- Idempotente: reaplica los atributos aunque el rol ya existiera.
-ALTER ROLE revylia_panel_ro NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION;
+-- `NOINHERIT` y `LOGIN` se incluyen explícitamente: sin `NOINHERIT`, un rol
+-- `revylia_panel_ro` preexistente que perteneciera a algún grupo privilegiado
+-- conservaría los privilegios de escritura heredados y esta migración no se
+-- los quitaría, aunque el bloque `DO $$` de arriba sí lo declara al crearlo.
+ALTER ROLE revylia_panel_ro
+    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
+
+-- Si el rol venía de antes, pudo quedar dentro de algún grupo. Se sale de
+-- todos: la pertenencia es la vía más silenciosa de recuperar escritura.
+DO $$
+DECLARE grupo text;
+BEGIN
+    FOR grupo IN
+        SELECT g.rolname
+        FROM pg_auth_members m
+        JOIN pg_roles g ON g.oid = m.roleid
+        JOIN pg_roles r ON r.oid = m.member
+        WHERE r.rolname = 'revylia_panel_ro'
+    LOOP
+        EXECUTE format('REVOKE %I FROM revylia_panel_ro', grupo);
+        RAISE NOTICE 'revylia_panel_ro salió del grupo %', grupo;
+    END LOOP;
+END
+$$;
 
 -- Toda sesión de este rol arranca en solo lectura. Un `SET` del lado del
 -- cliente no sobrevive de forma fiable al transaction pooler de Supabase;
@@ -92,12 +115,55 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA revylia FROM revylia_panel_ro;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA revylia FROM revylia_panel_ro;
 REVOKE CREATE ON SCHEMA revylia FROM revylia_panel_ro;
+
+-- PUBLIC: el agujero que revocar solo del rol no tapa.
+--
+-- PostgreSQL concede por defecto `EXECUTE` sobre TODA función a `PUBLIC`, y en
+-- PG <= 14 también `CREATE` sobre el esquema `public`. Revocar únicamente de
+-- `revylia_panel_ro` no quita ninguna de las dos, porque no las tiene a título
+-- propio: las hereda de `PUBLIC`. Hoy no hay funciones en `revylia`, así que
+-- esto es latente, pero el día que alguien añada una `SECURITY DEFINER` sería
+-- una vía de escritura desde un rol "de solo lectura".
+--
+-- `default_transaction_read_only` NO cierra ese hueco: es revertible con un
+-- `SET` desde la propia sesión.
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA revylia FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;      -- no-op en PG >= 15
 REVOKE CREATE ON SCHEMA public FROM revylia_panel_ro;
 
--- Las tablas que se creen a futuro en el esquema no le llegan al panel
--- por accidente con más permisos de los debidos.
-ALTER DEFAULT PRIVILEGES IN SCHEMA revylia
-    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM revylia_panel_ro;
+-- Las tablas y funciones que se creen a futuro no llegan al panel por
+-- accidente con más permisos de los debidos.
+--
+-- `ALTER DEFAULT PRIVILEGES` sin `FOR ROLE` solo afecta a los objetos que cree
+-- EL ROL QUE EJECUTA ESTE SCRIPT. En Supabase las migraciones suelen correrlas
+-- `postgres` o `supabase_admin`, así que se declaran explícitamente: sin esto,
+-- una tabla futura creada por otro rol no quedaría cubierta.
+DO $$
+DECLARE propietario text;
+BEGIN
+    FOREACH propietario IN ARRAY ARRAY['postgres', 'supabase_admin', current_user]
+    LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = propietario) THEN
+            EXECUTE format(
+                'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
+                'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM revylia_panel_ro',
+                propietario
+            );
+            EXECUTE format(
+                'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA revylia '
+                'REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
+                propietario
+            );
+        END IF;
+    END LOOP;
+END
+$$;
+
+-- AVISO sobre tablas futuras: el riesgo real no es que el panel tenga DEMASIADOS
+-- permisos sobre una tabla nueva, sino que tenga DEMASIADO POCOS. Una tabla
+-- añadida a `revylia` sin `GRANT SELECT` y sin política `FOR SELECT` devolverá
+-- cero filas sin error, igual que describe la cabecera de este archivo. Al
+-- añadir una tabla al esquema hay que volver a ejecutar esta migración.
 
 
 -- ---------------------------------------------------------------------
